@@ -17,9 +17,9 @@ export class Cell extends Component {
     private gameController: any = null;
     private clickTimer: number = null;
     private isWaitingForDoubleClick: boolean = false;
+    private originalColor: Color = null;
     
     // 不同状态的显示颜色
-    private readonly normalColor = new Color(200, 200, 200, 255);
     private readonly crossColor = new Color(150, 150, 150, 255);
     private readonly horseColor = new Color(100, 200, 100, 255);
     private readonly hintColor = new Color(255, 200, 100, 255);
@@ -34,16 +34,13 @@ export class Cell extends Component {
     
     onTouchEnd(event: EventTouch) {
         if (this.clickTimer) {
-            // 已经有一个点击等待中，这是双击
             clearTimeout(this.clickTimer);
             this.clickTimer = null;
             this.isWaitingForDoubleClick = false;
             this.onDoubleClick();
         } else {
-            // 第一次点击，等待看是否有第二次点击
             this.isWaitingForDoubleClick = true;
             this.clickTimer = setTimeout(() => {
-                // 超时，执行单击
                 if (this.isWaitingForDoubleClick) {
                     this.onSingleClick();
                 }
@@ -65,18 +62,30 @@ export class Cell extends Component {
         }
     }
     
-    init(row: number, col: number, controller: any) {
+    init(row: number, col: number, controller: any, regionColor: Color) {
         this.row = row;
         this.col = col;
         this.gameController = controller;
-        this.updateDisplay('none');
+        this.originalColor = regionColor;
+        
+        // 设置背景颜色
+        if (this.backgroundSprite) {
+            this.backgroundSprite.color = regionColor;
+        }
         
         // 设置显示文本（坐标）
         if (this.displayLabel) {
-            const rowLetter = String.fromCharCode(65 + row); // A, B, C, D
+            const rowLetter = String.fromCharCode(65 + row);
             const colNumber = col + 1;
             this.displayLabel.string = `${rowLetter}${colNumber}`;
+            this.displayLabel.color = this.getContrastColor(regionColor);
         }
+    }
+    
+    // 获取对比色（用于文字显示）
+    getContrastColor(color: Color): Color {
+        const brightness = (color.r * 299 + color.g * 587 + color.b * 114) / 1000;
+        return brightness > 128 ? new Color(0, 0, 0, 255) : new Color(255, 255, 255, 255);
     }
     
     updateDisplay(markType: 'none' | 'horse' | 'cross') {
@@ -85,40 +94,49 @@ export class Cell extends Component {
         switch (markType) {
             case 'horse':
                 this.backgroundSprite.color = this.horseColor;
+                if (this.displayLabel) {
+                    this.displayLabel.string = "🐴";
+                    this.displayLabel.color = new Color(0, 0, 0, 255);
+                }
                 if (this.markSprite) {
                     this.markSprite.node.active = true;
-                    // 这里可以设置马的图片，暂时用文字代替
                     const label = this.markSprite.node.getComponent(Label);
                     if (label) label.string = "🐴";
                 }
-                if (this.displayLabel) this.displayLabel.string = "🐴";
                 break;
             case 'cross':
                 this.backgroundSprite.color = this.crossColor;
+                if (this.displayLabel) {
+                    this.displayLabel.string = "❌";
+                    this.displayLabel.color = new Color(0, 0, 0, 255);
+                }
                 if (this.markSprite) {
                     this.markSprite.node.active = true;
                     const label = this.markSprite.node.getComponent(Label);
                     if (label) label.string = "❌";
                 }
-                if (this.displayLabel) this.displayLabel.string = "❌";
                 break;
             default:
-                this.backgroundSprite.color = this.normalColor;
+                this.backgroundSprite.color = this.originalColor;
+                const rowLetter = String.fromCharCode(65 + this.row);
+                const colNumber = this.col + 1;
+                if (this.displayLabel) {
+                    this.displayLabel.string = `${rowLetter}${colNumber}`;
+                    this.displayLabel.color = this.getContrastColor(this.originalColor);
+                }
                 if (this.markSprite) {
                     this.markSprite.node.active = false;
                 }
-                const rowLetter = String.fromCharCode(65 + this.row);
-                const colNumber = this.col + 1;
-                if (this.displayLabel) this.displayLabel.string = `${rowLetter}${colNumber}`;
                 break;
         }
     }
     
     showHint() {
-        if (this.backgroundSprite && this.markType !== 'horse') {
+        if (this.backgroundSprite && this.originalColor) {
             this.backgroundSprite.color = this.hintColor;
             if (this.displayLabel) {
                 this.displayLabel.string = "🐴";
+                this.displayLabel.color = new Color(0, 0, 0, 255);
             }
         }
     }

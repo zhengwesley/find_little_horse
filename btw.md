@@ -1,0 +1,21 @@
+我已经把项目从原来的一个主游戏控制脚本拆解抽象出几个小的模块：
+
+游戏规则/状态管理（生命值、胜利/失败、计时）
+
+地图生成算法（颜色区域生成、连通区域BFS、回溯算法生成马位）
+
+UI更新逻辑（标签刷新、格子显示）
+
+用户交互处理（单击/双击响应）
+
+配置数据（颜色池、格子大小等）
+
+├── GameController.ts          # 主控制器（流程编排）
+├── GameConfig.ts              # 静态配置常量
+├── GameState.ts               # 游戏状态管理
+├── MapGenerator.ts            # 地图/关卡生成算法
+├── GridRenderer.ts            # 网格创建和显示
+├── CellComponent.ts           # 单个格子组件（已存在，假设你已有）
+└── types.ts                   # 接口/类型定义
+
+拆分之后，出现了若干个bug，现在的问题是点击网格之后没有反应。ai的分析是，在cell中，游戏控制器引用设置为controller，但是在gridcontroller中，调用 cellComp.init(row, col, null, color); 时，第 三个参数（controller）被硬编码为 null。导致在主游戏控制中的单击函数中controller条件为假。经过进一步修改，这个逻辑还真对了，可以正常运行了。

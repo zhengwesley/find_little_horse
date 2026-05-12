@@ -1,304 +1,142 @@
-import { _decorator, Component, Node, Prefab, instantiate, Label, Button, Sprite, Color, Vec3, resources } from 'cc';
-const { ccclass, property } = _decorator;
+import { _decorator, Component, Node, Prefab, Label, Button } from 'cc';
+import { GameConfig } from './GameConfig';
+import { GameState } from './GameState';
+import { MapGenerator } from './MapGenerator';
+import { GridRenderer } from './GridRenderer';
+import { CellData } from './types';
 
-// 格子数据结构
-interface CellData {
-    row: number;      // 行号 0-3 对应 A-D
-    col: number;      // 列号 0-3 对应 1-4
-    hasHorse: boolean;
-    markType: 'none' | 'horse' | 'cross';
-    node: Node | null;
-}
+const { ccclass, property } = _decorator;
 
 @ccclass('GameController')
 export class GameController extends Component {
-    @property(Prefab)
-    cellPrefab: Prefab = null;
-
-    @property(Node)
-    gridContainer: Node = null;
-
-    @property(Label)
-    lifeLabel: Label = null;
-
-    @property(Label)
-    timeLabel: Label = null;
-
-    @property(Label)
-    remainingLabel: Label = null;
-
-    @property(Label)
-    messageLabel: Label = null;
-
-    @property(Button)
-    resetButton: Button = null;
-
-    // 游戏配置
-    private gridSize: number = 4;
+    @property(Prefab) cellPrefab: Prefab = null;
+    @property(Node) gridContainer: Node = null;
+    @property(Label) lifeLabel: Label = null;
+    @property(Label) timeLabel: Label = null;
+    @property(Label) remainingLabel: Label = null;
+    @property(Label) messageLabel: Label = null;
+    @property(Button) resetButton: Button = null;
+    
+    private gameState: GameState;
+    private gridRenderer: GridRenderer;
     private cells: CellData[][] = [];
-    private currentLife: number = 2;
-    private remainingHorses: number = 4;
-    private gameTime: number = 0;
-    private isGameOver: boolean = false;
-    private isWin: boolean = false;
     private timeInterval: number = null;
-
-    // 固定的小马位置 (行, 列)
-    // 行: 0=A,1=B,2=C,3=D
-    // 列: 0=1,1=2,2=3,3=4
-    private horsePositions: { row: number; col: number }[] = [
-        { row: 1, col: 0 },  // B1
-        { row: 3, col: 1 },  // D2
-        { row: 0, col: 2 },  // A3
-        { row: 2, col: 3 }   // C4
-    ];
-
+    
     start() {
-        this.initGame();
+        this.gameState = new GameState(() => this.onStateChanged());
+        this.gridRenderer = new GridRenderer(this.gridContainer, this.cellPrefab, GameConfig.DEFAULT_GRID_SIZE, this);
         this.setupEvents();
+        this.initGame();
     }
-
-    initGame() {
-        this.currentLife = 2;
-        this.remainingHorses = 4;
-        this.gameTime = 0;
-        this.isGameOver = false;
-        this.isWin = false;
+    
+    async initGame() {
+        this.gameState.init(GameConfig.DEFAULT_LIFE, GameConfig.DEFAULT_HORSES);
         
-        this.updateUI();
-        this.createGrid();
-        this.startTimer();
+        const mapGenerator = new MapGenerator(GameConfig.DEFAULT_GRID_SIZE);
+        const mapData = mapGenerator.generateFullMap();
         
-        if (this.messageLabel) {
-            this.messageLabel.string = "游戏开始！双击格子标记小马，单击标记X";
-        }
-    }
-
-    setupEvents() {
-        if (this.resetButton) {
-            this.resetButton.node.on(Button.EventType.CLICK, this.resetGame, this);
-        }
-    }
-
-    createGrid() {
-        // 清空容器
-        if (this.gridContainer) {
-            this.gridContainer.removeAllChildren();
-        }
-        
-        this.cells = [];
-        
-        const cellSize = 100; // 格子大小
-        const spacing = 5;    // 间距
-        
-        // 从下到上创建行 (A-D 对应行索引 0-3)
-        for (let row = 0; row < this.gridSize; row++) {
-            this.cells[row] = [];
-            for (let col = 0; col < this.gridSize; col++) {
-                // 检查是否有马
-                const hasHorse = this.horsePositions.some(pos => pos.row === row && pos.col === col);
-                
-                // 实例化格子
-                const cellNode = instantiate(this.cellPrefab);
-                cellNode.setParent(this.gridContainer);
-                
-                // 设置位置 (从左到右，从下到上)
-                const x = col * (cellSize + spacing) - (this.gridSize * (cellSize + spacing)) / 2 + cellSize / 2;
-                const y = row * (cellSize + spacing) - (this.gridSize * (cellSize + spacing)) / 2 + cellSize / 2;
-                cellNode.setPosition(new Vec3(x, y, 0));
-                
-                // 初始化格子数据
-                const cellData: CellData = {
-                    row: row,
-                    col: col,
-                    hasHorse: hasHorse,
-                    markType: 'none',
-                    node: cellNode
-                };
-                this.cells[row][col] = cellData;
-                
-                // 获取格子组件并初始化
-                const cellComp = cellNode.getComponent('Cell');
-                if (cellComp) {
-                    cellComp.init(row, col, this);
-                }
-                
-                // 设置格子显示文本 (可选，显示坐标)
-                this.updateCellDisplay(row, col);
-            }
-        }
-    }
-
-    updateCellDisplay(row: number, col: number) {
-        const cell = this.cells[row][col];
-        if (!cell || !cell.node) return;
-        
-        const cellComp = cell.node.getComponent('Cell');
-        if (cellComp) {
-            cellComp.updateDisplay(cell.markType);
-        }
-    }
-
-    // 双击格子（标记为马）
-    onCellDoubleClick(row: number, col: number) {
-        if (this.isGameOver || this.isWin) return;
-        
-        const cell = this.cells[row][col];
-        
-        // 如果已经标记为马，不能重复标记
-        if (cell.markType === 'horse') return;
-        
-        // 如果已经标记为X，清除X标记
-        if (cell.markType === 'cross') {
-            cell.markType = 'none';
-            this.updateCellDisplay(row, col);
+        if (!mapData) {
+            console.error("游戏配置生成失败");
+            if (this.messageLabel) this.messageLabel.string = "游戏初始化失败，请重置";
             return;
         }
         
-        // 判定是否有马
+        this.cells = this.gridRenderer.createGrid(mapData.regions);
+        this.startTimer();
+        if (this.messageLabel) this.messageLabel.string = "游戏开始！双击格子标记小马，单击标记X";
+        this.updateUI();
+    }
+    
+    onCellDoubleClick(row: number, col: number) {
+        if (this.gameState.isGameOver || this.gameState.isWin) return;
+        
+        const cell = this.cells[row][col];
+        if (cell.markType === 'horse') return;
+        
+        if (cell.markType === 'cross') {
+            cell.markType = 'none';
+            this.gridRenderer.updateCellDisplay(row, col, 'none');
+            return;
+        }
+        
         if (cell.hasHorse) {
-            // 正确标记为马
             cell.markType = 'horse';
-            this.remainingHorses--;
-            this.updateUI();
-            this.updateCellDisplay(row, col);
-            
-            // 检查胜利
-            if (this.remainingHorses === 0) {
-                this.gameWin();
-            }
+            this.gameState.decrementHorse();
+            this.gridRenderer.updateCellDisplay(row, col, 'horse');
+            if (this.gameState.isWin) this.gameWin();
         } else {
-            // 错误标记，扣生命值
-            this.currentLife--;
-            this.updateUI();
-            
-            // 显示错误提示
+            const hasLife = this.gameState.decrementLife();
             if (this.messageLabel) {
-                this.messageLabel.string = `错误！这里没有小马！剩余生命：${this.currentLife}`;
+                this.messageLabel.string = `错误！这里没有小马！剩余生命：${this.gameState.currentLife}`;
                 this.scheduleOnce(() => {
-                    if (this.messageLabel && !this.isGameOver) {
+                    if (this.messageLabel && !this.gameState.isGameOver) {
                         this.messageLabel.string = "继续游戏...";
                     }
                 }, 1.5);
             }
-            
-            // 检查游戏结束
-            if (this.currentLife <= 0) {
-                this.gameLose();
-            }
+            if (!hasLife) this.gameLose();
         }
     }
     
-    // 单击格子（标记为X）
     onCellClick(row: number, col: number) {
-        if (this.isGameOver || this.isWin) return;
+        if (this.gameState.isGameOver || this.gameState.isWin) return;
         
         const cell = this.cells[row][col];
-        
-        // 如果已经标记为马，不能标记X
         if (cell.markType === 'horse') return;
         
-        // 切换X标记
-        if (cell.markType === 'cross') {
-            cell.markType = 'none';
-        } else {
-            cell.markType = 'cross';
-        }
-        
-        this.updateCellDisplay(row, col);
+        const newMark = cell.markType === 'cross' ? 'none' : 'cross';
+        cell.markType = newMark;
+        this.gridRenderer.updateCellDisplay(row, col, newMark);
     }
-
-    updateUI() {
-        if (this.lifeLabel) {
-            this.lifeLabel.string = `生命值: ${this.currentLife}`;
-        }
-        if (this.remainingLabel) {
-            this.remainingLabel.string = `剩余小马: ${this.remainingHorses}`;
-        }
+    
+    private onStateChanged() {
+        this.updateUI();
     }
-
-    startTimer() {
-        if (this.timeInterval) {
-            clearInterval(this.timeInterval);
-        }
+    
+    private updateUI() {
+        if (this.lifeLabel) this.lifeLabel.string = `生命值: ${this.gameState.currentLife}`;
+        if (this.remainingLabel) this.remainingLabel.string = `剩余小马: ${this.gameState.remainingHorses}`;
+    }
+    
+    private startTimer() {
+        if (this.timeInterval) clearInterval(this.timeInterval);
         
         this.timeInterval = setInterval(() => {
-            if (!this.isGameOver && !this.isWin) {
-                this.gameTime++;
-                const minutes = Math.floor(this.gameTime / 60);
-                const seconds = this.gameTime % 60;
+            if (!this.gameState.isGameOver && !this.gameState.isWin) {
+                this.gameState.incrementTime();
+                const minutes = Math.floor(this.gameState.gameTime / 60);
+                const seconds = this.gameState.gameTime % 60;
                 if (this.timeLabel) {
                     this.timeLabel.string = `时间: ${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
                 }
             }
         }, 1000);
     }
-
-    gameWin() {
-        this.isWin = true;
-        this.isGameOver = true;
-        if (this.timeInterval) {
-            clearInterval(this.timeInterval);
-        }
-        
-        if (this.messageLabel) {
-            this.messageLabel.string = "🎉 胜利！恭喜你找出了所有小马！ 🎉";
-        }
-        
-        // 可以在这里添加胜利特效
+    
+    private gameWin() {
+        if (this.timeInterval) clearInterval(this.timeInterval);
+        if (this.messageLabel) this.messageLabel.string = "🎉 胜利！恭喜你找出了所有小马！ 🎉";
         console.log("Game Win!");
     }
-
-    gameLose() {
-        this.isGameOver = true;
-        if (this.timeInterval) {
-            clearInterval(this.timeInterval);
-        }
-        
-        if (this.messageLabel) {
-            this.messageLabel.string = "💀 游戏失败！生命值用完了！ 💀";
-        }
-        
-        // 显示所有小马位置
-        this.revealAllHorses();
-        
-        console.log("Game Lose!");
+    
+    private gameLose() {
+        if (this.timeInterval) clearInterval(this.timeInterval);
+        if (this.messageLabel) this.messageLabel.string = "💀 游戏失败！生命值用完了！ 💀";
+        this.gridRenderer.revealAllHorses(this.cells);
     }
-
-    revealAllHorses() {
-        // 显示所有小马的正确位置
-        for (let row = 0; row < this.gridSize; row++) {
-            for (let col = 0; col < this.gridSize; col++) {
-                const cell = this.cells[row][col];
-                if (cell.hasHorse && cell.markType !== 'horse') {
-                    // 显示正确位置（可以用特殊标记）
-                    const cellComp = cell.node.getComponent('Cell');
-                    if (cellComp) {
-                        cellComp.showHint();
-                    }
-                }
-            }
-        }
-    }
-
+    
     resetGame() {
-        // 重置游戏
-        if (this.timeInterval) {
-            clearInterval(this.timeInterval);
-        }
-        
-        // 清空格子
-        if (this.gridContainer) {
-            this.gridContainer.removeAllChildren();
-        }
-        
-        // 重新初始化
+        if (this.timeInterval) clearInterval(this.timeInterval);
         this.initGame();
     }
-
-    onDestroy() {
-        if (this.timeInterval) {
-            clearInterval(this.timeInterval);
+    
+    private setupEvents() {
+        if (this.resetButton) {
+            this.resetButton.node.on(Button.EventType.CLICK, this.resetGame, this);
         }
+    }
+    
+    onDestroy() {
+        if (this.timeInterval) clearInterval(this.timeInterval);
     }
 }
