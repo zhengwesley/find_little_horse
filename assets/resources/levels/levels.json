@@ -1,0 +1,50 @@
+[
+  {
+    "level": 1,
+    "gridSize": 4,
+    "regionSizes": [1, 2, 6, 7],
+    "regions": [
+      { "cells": [{ "row": 0, "col": 2 }] },
+      { "cells": [{ "row": 1, "col": 0 }, { "row": 0, "col": 0 }] },
+      { "cells": [
+        { "row": 0, "col": 1 },
+        { "row": 0, "col": 3 },
+        { "row": 1, "col": 1 },
+        { "row": 1, "col": 2 },
+        { "row": 1, "col": 3 },
+        { "row": 2, "col": 3 }
+      ] },
+      { "cells": [
+        { "row": 2, "col": 0 },
+        { "row": 2, "col": 1 },
+        { "row": 2, "col": 2 },
+        { "row": 3, "col": 0 },
+        { "row": 3, "col": 1 },
+        { "row": 3, "col": 2 },
+        { "row": 3, "col": 3 }
+      ] }
+    ],
+    "_comment": "horsePositions uses zero-based row/col indexes. row 0 is the bottom row, col 0 is the leftmost column.",
+    "horsePositions": [
+      { "row": 2, "col": 3 },
+      { "row": 3, "col": 1 },
+      { "row": 0, "col": 2 },
+      { "row": 1, "col": 0 }
+    ],
+    "life": 2
+  },
+  {
+    "level": 2,
+    "gridSize": 5,
+    "regionSizes": [1, 4, 5, 5, 10],
+    "_comment": "horsePositions uses zero-based row/col indexes. row 0 is the bottom row, col 0 is the leftmost column.",
+    "horsePositions": [
+      { "row": 0, "col": 1 },
+      { "row": 1, "col": 4 },
+      { "row": 2, "col": 0 },
+      { "row": 3, "col": 3 },
+      { "row": 4, "col": 2 }
+    ],
+    "life": 3
+  }
+]

@@ -73,12 +73,9 @@ export class Cell extends Component {
             this.backgroundSprite.color = regionColor;
         }
         
-        // 设置显示文本（坐标）
+        // 设置显示文本（坐标）- 初始为空
         if (this.displayLabel) {
-            const rowLetter = String.fromCharCode(65 + row);
-            const colNumber = col + 1;
-            this.displayLabel.string = `${rowLetter}${colNumber}`;
-            this.displayLabel.color = this.getContrastColor(regionColor);
+            this.displayLabel.string = "";
         }
     }
     
@@ -89,15 +86,12 @@ export class Cell extends Component {
     }
     
     updateDisplay(markType: 'none' | 'horse' | 'cross') {
-        if (!this.backgroundSprite) return;
+        if (!this.displayLabel) return;
         
         switch (markType) {
             case 'horse':
-                this.backgroundSprite.color = this.horseColor;
-                if (this.displayLabel) {
-                    this.displayLabel.string = "🐴";
-                    this.displayLabel.color = new Color(0, 0, 0, 255);
-                }
+                this.displayLabel.string = "🐴";
+                this.displayLabel.color = new Color(0, 0, 0, 255);
                 if (this.markSprite) {
                     this.markSprite.node.active = true;
                     const label = this.markSprite.node.getComponent(Label);
@@ -105,11 +99,8 @@ export class Cell extends Component {
                 }
                 break;
             case 'cross':
-                this.backgroundSprite.color = this.crossColor;
-                if (this.displayLabel) {
-                    this.displayLabel.string = "❌";
-                    this.displayLabel.color = new Color(0, 0, 0, 255);
-                }
+                this.displayLabel.string = "❌";
+                this.displayLabel.color = new Color(0, 0, 0, 255);
                 if (this.markSprite) {
                     this.markSprite.node.active = true;
                     const label = this.markSprite.node.getComponent(Label);
@@ -117,13 +108,7 @@ export class Cell extends Component {
                 }
                 break;
             default:
-                this.backgroundSprite.color = this.originalColor;
-                const rowLetter = String.fromCharCode(65 + this.row);
-                const colNumber = this.col + 1;
-                if (this.displayLabel) {
-                    this.displayLabel.string = `${rowLetter}${colNumber}`;
-                    this.displayLabel.color = this.getContrastColor(this.originalColor);
-                }
+                this.displayLabel.string = "";
                 if (this.markSprite) {
                     this.markSprite.node.active = false;
                 }
@@ -132,12 +117,9 @@ export class Cell extends Component {
     }
     
     showHint() {
-        if (this.backgroundSprite && this.originalColor) {
-            this.backgroundSprite.color = this.hintColor;
-            if (this.displayLabel) {
-                this.displayLabel.string = "🐴";
-                this.displayLabel.color = new Color(0, 0, 0, 255);
-            }
+        if (this.displayLabel) {
+            this.displayLabel.string = "🐴";
+            this.displayLabel.color = new Color(0, 0, 0, 255);
         }
     }
     

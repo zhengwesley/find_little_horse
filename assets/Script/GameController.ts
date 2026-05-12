@@ -1,9 +1,10 @@
 import { _decorator, Component, Node, Prefab, Label, Button } from 'cc';
 import { GameConfig } from './GameConfig';
 import { GameState } from './GameState';
+import { LevelManager } from './LevelManager';
 import { MapGenerator } from './MapGenerator';
 import { GridRenderer } from './GridRenderer';
-import { CellData } from './types';
+import { CellData, LevelConfig } from './types';
 
 const { ccclass, property } = _decorator;
 
@@ -21,19 +22,38 @@ export class GameController extends Component {
     private gridRenderer: GridRenderer;
     private cells: CellData[][] = [];
     private timeInterval: number = null;
+    private currentLevelConfig: LevelConfig | null = null;
     
-    start() {
+    async start() {
         this.gameState = new GameState(() => this.onStateChanged());
-        this.gridRenderer = new GridRenderer(this.gridContainer, this.cellPrefab, GameConfig.DEFAULT_GRID_SIZE, this);
+        await this.loadCurrentLevel();
+        const gridSize = this.currentLevelConfig?.gridSize ?? GameConfig.DEFAULT_GRID_SIZE;
+        this.gridRenderer = new GridRenderer(this.gridContainer, this.cellPrefab, gridSize, this);
         this.setupEvents();
-        this.initGame();
+        await this.initGame();
+    }
+    
+    private async loadCurrentLevel() {
+        try {
+            this.currentLevelConfig = await LevelManager.getLevel(GameConfig.currentLevel);
+            if (this.currentLevelConfig) {
+                GameConfig.currentLevel = this.currentLevelConfig.level;
+            }
+        } catch (error) {
+            console.error('[GameController] 关卡加载失败，使用默认配置', error);
+            this.currentLevelConfig = null;
+        }
     }
     
     async initGame() {
-        this.gameState.init(GameConfig.DEFAULT_LIFE, GameConfig.DEFAULT_HORSES);
+        const life = this.currentLevelConfig?.life ?? GameConfig.DEFAULT_LIFE;
+        const gridSize = this.currentLevelConfig?.gridSize ?? GameConfig.DEFAULT_GRID_SIZE;
+        const horses = this.currentLevelConfig?.horsePositions.length ?? GameConfig.DEFAULT_HORSES;
         
-        const mapGenerator = new MapGenerator(GameConfig.DEFAULT_GRID_SIZE);
-        const mapData = mapGenerator.generateFullMap();
+        this.gameState.init(life, horses);
+        
+        const mapGenerator = new MapGenerator(gridSize);
+        const mapData = mapGenerator.generateFullMap(this.currentLevelConfig ?? undefined);
         
         if (!mapData) {
             console.error("游戏配置生成失败");
@@ -41,6 +61,7 @@ export class GameController extends Component {
             return;
         }
         
+        this.gridRenderer = new GridRenderer(this.gridContainer, this.cellPrefab, gridSize, this);
         this.cells = this.gridRenderer.createGrid(mapData.regions);
         this.startTimer();
         if (this.messageLabel) this.messageLabel.string = "游戏开始！双击格子标记小马，单击标记X";
@@ -107,7 +128,9 @@ export class GameController extends Component {
                 const minutes = Math.floor(this.gameState.gameTime / 60);
                 const seconds = this.gameState.gameTime % 60;
                 if (this.timeLabel) {
-                    this.timeLabel.string = `时间: ${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                    const minuteText = ('0' + minutes).slice(-2);
+                    const secondText = ('0' + seconds).slice(-2);
+                    this.timeLabel.string = `时间: ${minuteText}:${secondText}`;
                 }
             }
         }, 1000);
@@ -125,9 +148,9 @@ export class GameController extends Component {
         this.gridRenderer.revealAllHorses(this.cells);
     }
     
-    resetGame() {
+    async resetGame() {
         if (this.timeInterval) clearInterval(this.timeInterval);
-        this.initGame();
+        await this.initGame();
     }
     
     private setupEvents() {

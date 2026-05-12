@@ -16,6 +16,19 @@ export interface ColorRegion {
     horsePosition: { row: number; col: number } | null;
 }
 
+export interface RegionDefinition {
+    cells: { row: number; col: number }[];
+}
+
+export interface LevelConfig {
+    level: number;
+    gridSize: number;
+    regionSizes: number[];
+    regions?: RegionDefinition[];
+    horsePositions: { row: number; col: number }[];
+    life: number;
+}
+
 export interface GameStats {
     currentLife: number;
     remainingHorses: number;

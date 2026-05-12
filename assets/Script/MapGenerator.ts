@@ -1,5 +1,5 @@
-import { Color, ColorConstants } from 'cc';
-import { ColorRegion } from './types';
+import { Color } from 'cc';
+import { ColorRegion, LevelConfig, RegionDefinition } from './types';
 import { GameConfig } from './GameConfig';
 
 export class MapGenerator {
@@ -9,42 +9,148 @@ export class MapGenerator {
         this.gridSize = gridSize;
     }
     
-    generateFullMap(): { regions: ColorRegion[]; horsePositions: { row: number; col: number }[] } | null {
-        const regions = this.generateColorRegions();
-        const horsePositions = this.generateHorsePositions();
-        
-        if (!horsePositions || horsePositions.length !== this.gridSize) {
+    generateFullMap(levelConfig?: LevelConfig): { regions: ColorRegion[]; horsePositions: { row: number; col: number }[] } | null {
+        let regions: ColorRegion[] | null = null;
+        if (levelConfig?.regions && levelConfig.regions.length > 0) {
+            regions = this.createFixedRegions(levelConfig.regions);
+        } else {
+            const regionSizes = levelConfig?.regionSizes || GameConfig.REGION_SIZES[this.gridSize] || this.generateDefaultRegionSizes();
+            regions = this.generateColorRegions(regionSizes);
+        }
+
+        if (!regions) {
+            console.error('[MapGenerator] 区域生成失败');
             return null;
         }
+
+        console.log(`[MapGenerator] 生成了 ${regions.length} 个区域:`, regions.map(r => `${r.id}(${r.cells.length}格)`).join(', '));
         
-        if (!this.assignHorsesToRegions(regions, horsePositions)) {
+        let horsePositions: { row: number; col: number }[] | null = null;
+        if (levelConfig?.horsePositions && levelConfig.horsePositions.length === this.gridSize) {
+            const validAssignment = this.assignHorsesToRegions(regions, levelConfig.horsePositions);
+            if (!validAssignment) {
+                console.error('[MapGenerator] 关卡中指定的小马位置无法分配到区域');
+                return null;
+            }
+            horsePositions = levelConfig.horsePositions;
+        } else {
+            horsePositions = this.generateHorsesForRegions(regions);
+        }
+        
+        console.log(`[MapGenerator] 生成了 ${horsePositions?.length ?? 0} 匹小马位置`);
+        
+        if (!horsePositions || horsePositions.length !== this.gridSize) {
+            console.error(`[MapGenerator] 失败: 小马数量不匹配。期望: ${this.gridSize}, 实际: ${horsePositions?.length ?? 0}`);
             return null;
         }
         
         return { regions, horsePositions };
     }
     
-    private generateColorRegions(): ColorRegion[] {
+    // 新方法：为每个区域生成一匹马
+    private generateHorsesForRegions(regions: ColorRegion[]): { row: number; col: number }[] | null {
+        const horsePositions: { row: number; col: number }[] = [];
+        const usedRows = new Set<number>();
+        const usedCols = new Set<number>();
+        
+        // 为每个区域随机选择一个格子放马
+        for (const region of regions) {
+            if (region.cells.length === 0) {
+                console.error(`[MapGenerator] 区域 ${region.id} 没有格子`);
+                return null;
+            }
+            
+            // 过滤出符合条件的格子（不在已使用的行/列，且不与已有的马相邻）
+            const validCells = region.cells.filter(cell => {
+                if (usedRows.has(cell.row) || usedCols.has(cell.col)) return false;
+                
+                // 检查是否与已有的马相邻
+                for (const pos of horsePositions) {
+                    if (Math.abs(pos.row - cell.row) <= 1 && Math.abs(pos.col - cell.col) <= 1) {
+                        return false;
+                    }
+                }
+                return true;
+            });
+            
+            if (validCells.length === 0) {
+                console.warn(`[MapGenerator] 区域 ${region.id} 找不到有效的马位置，尝试降低约束...`);
+                // 降低约束：只要求不在已使用的行/列
+                const relaxedCells = region.cells.filter(cell => 
+                    !usedRows.has(cell.row) && !usedCols.has(cell.col)
+                );
+                
+                if (relaxedCells.length === 0) {
+                    console.error(`[MapGenerator] 区域 ${region.id} 仍然找不到有效位置`);
+                    return null;
+                }
+                
+                const cell = relaxedCells[Math.floor(Math.random() * relaxedCells.length)];
+                horsePositions.push(cell);
+                region.horsePosition = cell;
+                usedRows.add(cell.row);
+                usedCols.add(cell.col);
+            } else {
+                // 从有效格子中随机选择一个
+                const cell = validCells[Math.floor(Math.random() * validCells.length)];
+                horsePositions.push(cell);
+                region.horsePosition = cell;
+                usedRows.add(cell.row);
+                usedCols.add(cell.col);
+            }
+        }
+        
+        return horsePositions;
+    }
+    
+    private createFixedRegions(regionDefs: RegionDefinition[]): ColorRegion[] | null {
+        const regions: ColorRegion[] = [];
+        const occupied = new Set<string>();
+
+        for (let regionId = 0; regionId < regionDefs.length; regionId++) {
+            const def = regionDefs[regionId];
+            if (!Array.isArray(def.cells) || def.cells.length === 0) {
+                console.error(`[MapGenerator] 区域 ${regionId} 定义无效或为空`);
+                return null;
+            }
+
+            const cells = def.cells.map(cell => ({ row: Number(cell.row), col: Number(cell.col) }));
+            for (const cell of cells) {
+                const key = `${cell.row},${cell.col}`;
+                if (cell.row < 0 || cell.row >= this.gridSize || cell.col < 0 || cell.col >= this.gridSize) {
+                    console.error(`[MapGenerator] 区域 ${regionId} 包含超出范围的格子: ${key}`);
+                    return null;
+                }
+                if (occupied.has(key)) {
+                    console.error(`[MapGenerator] 区域 ${regionId} 与其它区域存在重叠格子: ${key}`);
+                    return null;
+                }
+                occupied.add(key);
+            }
+
+            regions.push({
+                id: regionId,
+                color: GameConfig.COLOR_POOL[regionId % GameConfig.COLOR_POOL.length],
+                cells,
+                horsePosition: null
+            });
+        }
+
+        if (occupied.size !== this.gridSize * this.gridSize) {
+            console.warn(`[MapGenerator] 固定区域配置未覆盖全部格子：已覆盖 ${occupied.size}/${this.gridSize * this.gridSize}`);
+            return null;
+        }
+
+        return regions;
+    }
+
+    private generateColorRegions(regionSizes: number[]): ColorRegion[] {
         const regions: ColorRegion[] = [];
         const assigned = Array(this.gridSize).fill(null).map(() => Array(this.gridSize).fill(false));
         
-        for (let regionId = 0; regionId < this.gridSize; regionId++) {
-            let cells: { row: number; col: number }[] = [];
-            
-            if (regionId === this.gridSize - 1) {
-                // 最后一个区域取所有剩余格子
-                for (let i = 0; i < this.gridSize; i++) {
-                    for (let j = 0; j < this.gridSize; j++) {
-                        if (!assigned[i][j]) {
-                            cells.push({ row: i, col: j });
-                            assigned[i][j] = true;
-                        }
-                    }
-                }
-            } else {
-                const targetSize = Math.floor((this.gridSize * this.gridSize) / this.gridSize);
-                cells = this.generateConnectedRegion(assigned, targetSize);
-            }
+        for (let regionId = 0; regionId < regionSizes.length; regionId++) {
+            const targetSize = regionSizes[regionId];
+            const cells = this.generateConnectedRegion(assigned, targetSize);
             
             regions.push({
                 id: regionId,
@@ -55,6 +161,21 @@ export class MapGenerator {
         }
         
         return regions;
+    }
+    
+    // 如果没有配置，生成默认的均匀分配
+    private generateDefaultRegionSizes(): number[] {
+        const totalCells = this.gridSize * this.gridSize;
+        const numRegions = this.gridSize;
+        const baseSizes = new Array(numRegions).fill(Math.floor(totalCells / numRegions));
+        const remainder = totalCells % numRegions;
+        
+        // 将余数分配到最后几个区域
+        for (let i = 0; i < remainder; i++) {
+            baseSizes[numRegions - 1 - i]++;
+        }
+        
+        return baseSizes;
     }
     
     private generateConnectedRegion(assigned: boolean[][], targetSize: number): { row: number; col: number }[] {
